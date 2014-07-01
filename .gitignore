@@ -1,0 +1,239 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Web;
+using System.Web.UI;
+using System.Web.UI.WebControls;
+using System.IO;
+using System.IO.Compression;
+using System.Data;
+using System.Data.Sql;
+using DAL;
+using System.Collections;
+using System.Diagnostics;
+using model;
+using System.Web.Script.Serialization;
+
+
+public partial class shipments_manage : System.Web.UI.Page
+{
+    DBManager db= new DBManager();
+    remarkModel rm = new remarkModel();
+    Designs ds = new Designs();
+    protected void Page_Load(object sender, EventArgs e)
+    {
+        if (!IsPostBack)
+        {
+            show();
+        }
+        
+    }
+
+    protected void show()
+    {
+        gvOrder.DataSource = db.ExecuteQuery("select * from g_order", CommandType.Text);
+        gvOrder.DataBind();
+    }
+
+       protected void gvOrder_PageIndexChanging(object sender, GridViewPageEventArgs e)
+    {
+        gvOrder.PageIndex = e.NewPageIndex;
+        gvOrder.DataBind();
+    }
+
+    protected void linkbtnDown_Click(object sender, EventArgs e)
+    {
+        LinkButton lb = (LinkButton)sender;
+        GridViewRow gvr = (GridViewRow)lb.Parent.Parent;
+        gvr.BackColor = System.Drawing.Color.Red;
+
+    }
+
+
+    protected void Button1_Click(object sender, EventArgs e)
+    {
+        IList list = new ArrayList();
+
+        string down_Buyer;
+        string down_ID;
+        string down_Designs;
+        string shortName;
+        string fileName;
+        string OrderNo;
+        foreach (GridViewRow dl in gvOrder.Rows)
+        {
+            CheckBox chk = (CheckBox)dl.FindControl("cbItem") ;
+            if (chk.Checked == true)
+            {
+               // Response.Write("<script>alert('"+dl.Cells[1].Text+"')</script>");
+                DataTable dt = db.ExecuteQuery("select ID,Buyer,Designs from g_order where ID='" + dl.Cells[1].Text + "'", CommandType.Text);
+                down_Buyer = dt.Rows[0]["Buyer"].ToString();
+                down_ID = dt.Rows[0]["ID"].ToString();
+                down_Designs = dt.Rows[0]["Designs"].ToString();
+                if (down_Designs.Length > 0)
+                {
+                    Designs[] deArry = new JavaScriptSerializer().Deserialize<Designs[]>(down_Designs);
+                    shortName = deArry[0].ShortName;
+                    OrderNo = deArry[0].OrderNo;
+                    if (down_Buyer.Length > 0 && shortName.Length == 0)
+                    {
+                        fileName = down_Buyer + "-" + OrderNo;
+                        list.Add(fileName);
+                    }
+                    if (down_Buyer.Length == 0 && shortName.Length > 0)
+                    {
+                        fileName = shortName + "-" + OrderNo;
+                        list.Add(fileName);
+                    }
+                    if (down_Buyer.Length > 0 && shortName.Length > 0)
+                    {
+                        fileName = down_Buyer + "-" + shortName + "-" + OrderNo;
+                        list.Add(fileName);
+                    }
+                }
+               
+            }
+        }
+        search(list);
+       // Label1.Text = list[0].ToString();
+
+    }
+
+
+    //下载文件////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    protected void search(IList list)
+    {
+        string destPath = "F:\\临时下载文件夹";//urlToVirtual("F:\\") + "临时下载文件夹";
+        if (!Directory.Exists(destPath))//判断文件夹是否存在 
+        {
+            Directory.CreateDirectory(destPath);//不存在则创建文件夹 
+        }
+        string PathDest = urlToVirtual("F:\\临时下载文件夹");
+
+        //  string[] files=Directory.GetDirectories("C:\\","*.jpg", SearchOption.AllDirectories);
+        System.IO.DirectoryInfo aDir = new System.IO.DirectoryInfo(urlToVirtual("F:\\"));
+        System.IO.DirectoryInfo[] dirs = aDir.GetDirectories();
+        foreach (DirectoryInfo str in dirs)
+        {
+            if (list.Contains(str.Name))
+            {
+                CopyFile(urlToVirtual(str.FullName), PathDest);
+                // Label1.Text = str.Name + " ->" + str.FullName + "->文件父目录是：" + str.Parent.FullName;
+               
+            }
+        }
+
+        WinRAR(PathDest, "F:\\", PathDest + ".rar");
+        //  Label1.Text = str.Name + " ->" + str.FullName + "->文件父目录是：" + str.Parent.FullName;
+        //Response.AddHeader("Content-Disposition", "attachment;filename=" + str.Name+".rar");
+        DownFile(PathDest + ".rar", PathDest);
+    }
+
+    /// </summary>
+    /// <param name="path">将要被压缩的文件夹（绝对路径）</param>
+    /// <param name="rarPath">压缩后的 .rar 的存放目录（绝对路径）</param>
+    /// <param name="rarName">压缩文件的名称（包括后缀）</param>
+    /// <returns>true 或 false。压缩成功返回 true，反之，false。</returns>
+    public static bool WinRAR(string path, string rarPath, string rarName)
+    {
+        bool flag = false;
+        string rarexe;       //WinRAR.exe 的完整路径
+
+        string cmd;          //WinRAR 命令参数
+        ProcessStartInfo startinfo;
+        Process process;
+        try
+        {
+
+            //rarexe = Server.MapPath(@"~/Tools/WinRAR.exe");
+            rarexe = @"C:\Program Files\WinRAR\WinRAR.exe";
+            //Directory.CreateDirectory(rarPath);
+            //压缩命令，相当于在要压缩的文件夹(path)上点右键 ->WinRAR->添加到压缩文件->输入压缩文件名(rarName)
+            cmd = string.Format("a -ep1 {0} {1}", rarName, path);
+            startinfo = new ProcessStartInfo();
+            startinfo.FileName = rarexe;
+            startinfo.Arguments = cmd;                          //设置命令参数
+            startinfo.WindowStyle = ProcessWindowStyle.Hidden; //隐藏 WinRAR 窗口
+            startinfo.WorkingDirectory = rarPath;
+            process = new Process();
+            process.StartInfo = startinfo;
+            process.Start();
+            process.WaitForExit(); //无限期等待进程 winrar.exe 退出
+            if (process.HasExited)
+            {
+                flag = true;
+            }
+            process.Close();
+        }
+        catch (Exception e)
+        {
+            throw e;
+        }
+        return flag;
+    }
+
+    /// 将物理路径转换成相对路径  
+    /// </summary>  
+    /// <param name="imagesurl1"></param>  
+    /// <returns></returns>  
+    private string urlToVirtual(string imagesurl1)
+    {
+        //其实这里的tmpRootDir也等于tmpRootDir</span><span style="font-size:18px;">=Server.MapPath(</span><span style="font-size:18px;">"~/");              
+        string tmpRootDir = Server.MapPath(System.Web.HttpContext.Current.Request.ApplicationPath.ToString());//获取程序根目录  
+        string imagesurl2 = imagesurl1.Replace(tmpRootDir, ""); //转换成相对路径  
+        imagesurl2 = imagesurl2.Replace(@"\", @"/");
+        return imagesurl2;
+    }
+    //相对路径转换成服务器本地物理路径  
+    private string urlTolocal(string imagesurl1)
+    {
+        string tmpRootDir = Server.MapPath(System.Web.HttpContext.Current.Request.ApplicationPath.ToString());//获取程序根目录  
+        string imagesurl2 = tmpRootDir + imagesurl1.Replace(@"/", @"\"); //转换成绝对路径  
+        return imagesurl2;
+    }
+
+    private void DownFile(string filePath, string fileName)
+    {
+        FileInfo fileInfo = new FileInfo(filePath);
+        Response.Clear();
+        Response.ClearContent();
+        Response.ClearHeaders();
+        Response.AddHeader("Content-Disposition", "attachment;filename=" + fileName + ".rar");
+        Response.AddHeader("Content-Length", fileInfo.Length.ToString());
+        Response.AddHeader("Content-Transfer-Encoding", "binary");
+        Response.ContentType = "application/octet-stream";
+        Response.ContentEncoding = System.Text.Encoding.GetEncoding("gb2312");
+        Response.WriteFile(fileInfo.FullName);
+        Response.Flush();
+        Response.End();
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="sources">源路径</param>
+    /// <param name="dest">新路径</param>
+    private void CopyFile(string sources, string dest)
+    {
+        DirectoryInfo dinfo = new DirectoryInfo(sources);
+        //注，这里面传的是路径，并不是文件，所以不能保含带后缀的文件
+        foreach (FileSystemInfo f in dinfo.GetFileSystemInfos())
+        {
+            //目标路径destName = 目标文件夹路径 + 原文件夹下的子文件(或文件夹)名字
+            //Path.Combine(string a ,string b) 为合并两个字符串
+            String destName = Path.Combine(dest, f.Name);
+            if (f is FileInfo)
+            {
+                //如果是文件就复制
+                File.Copy(f.FullName, destName, true);//true代表可以覆盖同名文件
+            }
+            else
+            {
+                //如果是文件夹就创建文件夹然后复制然后递归复制
+                Directory.CreateDirectory(destName);
+                CopyFile(f.FullName, destName);
+            }
+        }
+    }
+ 
+}
